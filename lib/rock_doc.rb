@@ -3,7 +3,8 @@ class RockDoc
                                       :resource_class, :controller_class,
                                       :serializer_class, :routes,
                                       :json_representation, :permitted_params,
-                                      :notes, :final_markdown
+                                      :notes, :final_markdown, :attributes_for_json,
+                                      :attributes_for_permitted_params
                                      )
 
   RouteConfigurator = Struct.new(:action, :description, :verb, :pathspec,
@@ -46,6 +47,10 @@ class RockDoc
     }
   end
 
+  def supported_json_types
+    %w(String Integer Decimal Datetime Text Boolean)
+  end
+
   def t key, options={}
     I18n.t key, options.merge(scope: "api_doc")
   end
@@ -62,6 +67,18 @@ class RockDoc
         nil
       end
     end.compact.first
+  end
+
+  def present_json hash
+    json = JSON.pretty_generate(hash)
+
+    json.gsub!(/"(\[|\{)/, '\1')
+    json.gsub!(/(\]|\})"/, '\1')
+
+    json.gsub!(/:\ "(#{supported_json_types.join('|').downcase})"/i).each do |match|
+      ": #{match.gsub(':', '').gsub('"', '').strip.capitalize}"
+    end
+    json
   end
 
   def action_description config: required, action: required
@@ -113,20 +130,9 @@ class RockDoc
       }
 
       attributes.merge! associations
-
-      json_representation = JSON.pretty_generate attributes
-      json_representation.gsub!(/"(\[|\{)/, '\1')
-      json_representation.gsub!(/(\]|\})"/, '\1')
-
-      json_representation.gsub!(/:\ "\w*"/).each do |match|
-        ": #{match.gsub(':', '').gsub('"', '').strip.capitalize}"
-      end
+      config.attributes_for_json = attributes
 
     end
-
-    config.json_representation = json_representation
-
-    permitted_params = nil
 
     if config.controller_class && config.controller_class.permitted_params
       params_hash = config.controller_class.permitted_params
@@ -134,16 +140,20 @@ class RockDoc
         type = config.resource_class.columns_hash[attribute].type.to_s.capitalize rescue "String"
         [attribute, type]
       end.to_h
-      permitted_params = JSON.pretty_generate params_hash
-      permitted_params.gsub!(/:\ "\w*"/).each do |match|
-        match.gsub('"', '')
-      end
+      config.attributes_for_permitted_params = params_hash
     end
 
-    config.permitted_params = permitted_params
-
+    ## Hook for app code
     if controllers[controller]
       config.instance_eval &controllers[controller]
+    end
+
+    if config.json_representation.blank? && config.attributes_for_json.present?
+      config.json_representation = present_json attributes
+    end
+
+    if config.permitted_params.blank? && config.attributes_for_permitted_params.present?
+      config.permitted_params = present_json config.attributes_for_permitted_params
     end
 
     @toc << "- [#{config.resource_name}](##{config.controller})"

@@ -1,3 +1,3 @@
-module RockDoc
+class RockDoc
   VERSION = "0.0.1"
 end

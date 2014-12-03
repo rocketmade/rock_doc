@@ -12,6 +12,6 @@ task rock_doc: :environment do
   end
 
   File.open(Rails.root.join("doc/api.markdown"), "wb") do |f|
-    f.write RockDoc.generate
+    f.write RockDoc.new.generate
   end
 end

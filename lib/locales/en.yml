@@ -1,0 +1,22 @@
+
+
+en:
+  api_doc:
+    global_block: "API Documentation for %{app_name}"
+    actions:
+      default: "%{action} %{resources}"
+      index: "List all %{resources}"
+      show: "Get %{resource} details"
+      create: "Create a new %{resource}"
+      update: "Update a %{resource}"
+      destroy: "Destroy a %{resource}"
+      me: "Get the current %{resource}"
+      update_me: "Update the current %{resource}"
+    scopes:
+      default: ""
+      page: "Specifies the page of results to get. Defaults to %{scope_default}"
+      start_id: "Specifies the largest id for paginated results. No Default."
+
+    json:
+      resource_array: "[...{...%{resource}...},{...%{resource}...}...]"
+      resource_object: "{...%{resource}...}"

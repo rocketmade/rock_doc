@@ -1,4 +1,4 @@
-module RockDoc
+class RockDoc
   ControllerConfigurator = Struct.new(:controller, :resource_name,
                                       :resource_class, :controller_class,
                                       :serializer_class, :routes,
@@ -7,8 +7,16 @@ module RockDoc
                                      )
 
   RouteConfigurator = Struct.new(:action, :description, :verb, :pathspec,
-                                 :controller_config, :notes, :final_markdown
+                                 :controller_config, :notes, :final_markdown,
+                                 :scopes
                                 )
+
+
+  class << self
+    attr_accessor :controllers
+    attr_accessor :actions
+    attr_accessor :global_block
+  end
 
 
   def self.configure &block
@@ -16,43 +24,62 @@ module RockDoc
   end
 
   def self.controller name, &block
-    @controllers ||= {}
-    @controllers[name] = block
+    self.controllers ||= {}
+    self.controllers[name] = block
   end
 
   def self.action name, &block
-    @actions ||= {}
-    @actions[name] = block
+    self.actions ||= {}
+    self.actions[name] = block
   end
 
   def self.global &block
-    @global = block.call
+    self.global_block = block.call
   end
 
-  def self.configuration_strings
+  delegate :global_block, :actions, :controllers, to: :class
+
+  def configuration_strings
     {
       namespace: "api/",
-      app_name:  Rails.application.class.parent.name,
-
-      descriptions: { # TODO: move these to translations.
-        index:     "List all :resources",
-        show:      "Get one :resource details",
-        create:    "Create a new :resource",
-        update:    "Update a :resource",
-        destroy:   "Destroy a :resource",
-
-        me:        "Get the current :resource",
-        update_me: "Update the current :resource"
-      }
-    }.with_indifferent_access
+      app_name:  Rails.application.class.parent.name
+    }
   end
 
-  def self.required
+  def t key, options={}
+    I18n.t key, options.merge(scope: "api_doc")
+  end
+
+  def t! key, options={}
+    I18n.t! key, options.merge(scope: "api_doc")
+  end
+
+  def try_translations keys, options
+    keys.map do |key|
+      begin
+        t! key, options
+      rescue I18n::MissingTranslationData => e
+        nil
+      end
+    end.compact.first
+  end
+
+  def action_description config: required, action: required
+    keys = ["controllers.#{config.controller}.actions.#{action}", "actions.#{action}", "controllers.#{config.controller}.actions.default", "actions.default"]
+    try_translations keys, resource: config.resource_name, resources: config.resource_name.pluralize, controller: config.controller, action: action.capitalize
+  end
+
+  def scope_description config: required, scope: scope, default: nil, type: nil
+    keys = ["controllers.#{config.controller}.scopes.#{scope}", "scopes.#{scope}", "controllers.#{config.controller}.scopes.default", "scopes.default"]
+    try_translations keys, resource: config.resource_name, resources: config.resource_name.pluralize, controller: config.controller, scope_name: scope, scope_default: default, type: type
+  end
+
+  def required
     method = caller_locations(1,1)[0].label
     raise ArgumentError, "A required keyword argument was not specified when calling '#{method}'"
   end
 
-  def self.controller_block controller: required, routes: required, config: required
+  def controller_block controller: required, routes: required, config: required
     config.controller    = controller
     config.routes        = routes
     config.resource_name = controller.gsub(/^#{configuration_strings[:namespace]}/, '').camelcase.singularize
@@ -70,7 +97,7 @@ module RockDoc
                               end
 
     config.serializer_class = config.resource_class.active_model_serializer if config.resource_class.present? && config.resource_class < ActiveRecord::Base
-    json_representation = {}.to_json
+    json_representation = nil
 
     if config.serializer_class
       attributes = config.serializer_class.schema[:attributes].dup
@@ -78,9 +105,9 @@ module RockDoc
         key = config.resource_class.reflect_on_association(kvp.first).class_name
 
         if kvp.last.keys.include? :has_many
-          memo[kvp.first] = "[...{...#{key}...},{...#{key}...}...]"
+          memo[kvp.first] = t("json.resource_array", resource: key, resources: key.pluralize)
         else
-          memo[kvp.first] = "{...#{key}...}"
+          memo[kvp.first] = t("json.resource_object", resource: key, resources: key.pluralize)
         end
         memo
       }
@@ -99,7 +126,7 @@ module RockDoc
 
     config.json_representation = json_representation
 
-    permitted_params = {}.to_json
+    permitted_params = nil
 
     if config.controller_class && config.controller_class.permitted_params
       params_hash = config.controller_class.permitted_params
@@ -115,13 +142,14 @@ module RockDoc
 
     config.permitted_params = permitted_params
 
-    if @controllers[controller]
-      config.instance_eval &@controllers[controller]
+    if controllers[controller]
+      config.instance_eval &controllers[controller]
     end
 
-
+    @toc << "- [#{config.resource_name}](##{config.controller})"
     unless config.final_markdown.present?
       md = []
+      md << "<a name=\"#{config.controller}\" />"
       md << "## #{config.resource_name}"
       if config.json_representation.present?
         md << <<JSON
@@ -148,24 +176,55 @@ PARAMS
     config.final_markdown unless config.final_markdown == ":nodoc:"
   end
 
-  def self.route_block controller_config: required, route: required, config: required
+  def route_block controller_config: required, route: required, config: required
     config.action = route.defaults.fetch(:action, '')
-    config.description = configuration_strings[:descriptions].fetch(config.action, "#{config.action} :resources").gsub(':resource', controller_config.resource_name).gsub(":resources", controller_config.resource_name.pluralize)
+    config.description = action_description config: controller_config, action: config.action
     config.verb = route.verb.source.gsub(/[$^]/, '')
     config.pathspec = route.path.spec.to_s.gsub(/\(?.:format\)?/, '.json')
     config.controller_config = controller_config
 
-    if @actions["#{controller_config.controller}##{config.action}"]
-      config.instance_eval &@actions["#{controller_config.controller}##{config.action}"]
+    if config.action.to_s == "index"
+      scopes = controller_config.controller_class.scopes_configuration
+      config.scopes = scopes.reduce({}) do |memo, kvp|
+        key = kvp.first
+        value = kvp.last
+        if value[:type] == :hash
+          value[:using].each do |sub_key|
+            memo["#{key}[#{sub_key}]"] = scope_description scope: "#{key}[#{sub_key}]", config: controller_config, default: value[:default], type: value[:type]
+          end
+        else
+          memo[key.to_s] = scope_description scope: key, config: controller_config, default: value[:default], type: value[:type]
+        end
+
+        memo
+      end
     end
 
+    if actions["#{controller_config.controller}##{config.action}"]
+      config.instance_eval &actions["#{controller_config.controller}##{config.action}"]
+    end
+
+    @toc << "  - [#{config.description}](##{controller_config.controller}.#{config.action})"
     md = []
+    md << "<a name=\"#{controller_config.controller}.#{config.action}\" />"
     md << "### #{config.description}"
-    md << "#{config.verb} #{config.pathspec}"
+    md << "**#{config.verb} #{config.pathspec}**"
+
+    if config.scopes.present?
+      md << "\n\n##### GET parameters supported:"
+      config.scopes.each do |k, v|
+        scope = "* `#{k}`"
+        scope += ": #{v}" if v.present?
+        md << scope
+      end
+      md << "\n"
+    end
+
     if config.notes.present?
       md << ''
-      md << "#### Notes"
+      md << "##### Notes"
       md << config.notes
+      md << "\n"
     end
 
     config.final_markdown = md.join("\n") unless config.final_markdown.present?
@@ -174,9 +233,8 @@ PARAMS
 
   end
 
-  def self.generate
-    @controllers ||= {}
-    @actions     ||= {}
+  def generate
+    @toc = []
 
     controllers = Rails.application.routes.routes.reduce({}) { |memo, route|
       if route.defaults.fetch(:controller, '').starts_with? configuration_strings[:namespace]
@@ -186,22 +244,26 @@ PARAMS
       memo
     }
 
-    md = [@global || "# API Documentation for #{configuration_strings[:app_name]}"]
-
-
+    controller_blocks = []
     controllers.each do |controller, routes|
       controller_config = ControllerConfigurator.new
 
-      md << controller_block(controller: controller, routes: routes, config: controller_config)
-
+      controller_blocks << controller_block(controller: controller, routes: routes, config: controller_config)
 
       routes.each do |route|
         route_config = RouteConfigurator.new
-        md << route_block(controller_config: controller_config, config: route_config, route: route)
+        controller_blocks << route_block(controller_config: controller_config, config: route_config, route: route)
       end
-      md << ''
+      controller_blocks << ''
     end
 
+
+    md = []
+    md << global_block || "# " + t("global_header", app_name: configuration_strings[:app_name])
+    md << "\n"
+    md += @toc
+    md << "\n"
+    md += controller_blocks
     md.join("\n")
   end
 
@@ -210,5 +272,8 @@ PARAMS
       load "tasks/rock_doc_tasks.rake"
     end
 
+    initializer 'rock_doc_translations' do |app|
+      I18n.load_path += Dir[File.join(File.dirname(__FILE__), "locales/*.yml")]
+    end
   end
 end

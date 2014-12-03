@@ -1,51 +1,70 @@
 class RockDoc
+  GlobalConfigurator = Struct.new(:title, :toc, :global_block, :namespaces, :app_name)
+
   ControllerConfigurator = Struct.new(:controller, :resource_name,
                                       :resource_class, :controller_class,
                                       :serializer_class, :routes,
                                       :json_representation, :permitted_params,
                                       :notes, :final_markdown, :attributes_for_json,
-                                      :attributes_for_permitted_params
-                                     )
+                                      :attributes_for_permitted_params, :action_blocks
+                                     ) do
+    def action name, &block
+      self.action_blocks[name] = block
+    end
+
+    def action_blocks
+      @action_blocks ||= {}.with_indifferent_access
+    end
+  end
 
   RouteConfigurator = Struct.new(:action, :description, :verb, :pathspec,
                                  :controller_config, :notes, :final_markdown,
                                  :scopes
                                 )
 
+  ControllerConfigBlock = Struct.new(:namespace, :block)
+
 
   class << self
     attr_accessor :controllers
-    attr_accessor :actions
-    attr_accessor :global_block
+    attr_accessor :global_config
   end
 
+  def self.global_config
+    @global_config ||= GlobalConfigurator.new.tap do |gc|
+      gc.namespaces = [:api]
+      gc.app_name = Rails.application.class.parent.name
+    end
+  end
+
+  def self.controllers
+    @controllers ||= {}.with_indifferent_access
+  end
+
+  def self.current_namespaces
+    @namespaces ||= []
+  end
+
+  def self.namespace space, &block
+    current_namespaces << space
+    instance_exec &block
+    current_namespaces.pop
+  end
 
   def self.configure &block
-    instance_eval &block
+    instance_exec &block
   end
 
   def self.controller name, &block
-    self.controllers ||= {}
-    self.controllers[name] = block
-  end
-
-  def self.action name, &block
-    self.actions ||= {}
-    self.actions[name] = block
+    path = (current_namespaces + [name]).join('/')
+    self.controllers[path] = ControllerConfigBlock.new(path, block)
   end
 
   def self.global &block
-    self.global_block = block.call
+    block.call self.global_config
   end
 
-  delegate :global_block, :actions, :controllers, to: :class
-
-  def configuration_strings
-    {
-      namespace: "api/",
-      app_name:  Rails.application.class.parent.name
-    }
-  end
+  delegate :global_config, :controllers, to: :class
 
   def supported_json_types
     %w(String Integer Decimal Datetime Text Boolean)
@@ -99,7 +118,7 @@ class RockDoc
   def controller_block controller: required, routes: required, config: required
     config.controller    = controller
     config.routes        = routes
-    config.resource_name = controller.gsub(/^#{configuration_strings[:namespace]}/, '').camelcase.singularize
+    config.resource_name = controller.gsub(/^(#{global_config.namespaces.join('|')})\//, '').camelcase.singularize
 
     config.controller_class = begin
                                 Rails.application.routes.dispatcher("").send(:controller_reference, config.controller)
@@ -126,6 +145,7 @@ class RockDoc
         else
           memo[kvp.first] = t("json.resource_object", resource: key, resources: key.pluralize)
         end
+
         memo
       }
 
@@ -145,7 +165,7 @@ class RockDoc
 
     ## Hook for app code
     if controllers[controller]
-      config.instance_eval &controllers[controller]
+      config.instance_exec config, &controllers[controller].block
     end
 
     if config.json_representation.blank? && config.attributes_for_json.present?
@@ -210,8 +230,8 @@ PARAMS
       end
     end
 
-    if actions["#{controller_config.controller}##{config.action}"]
-      config.instance_eval &actions["#{controller_config.controller}##{config.action}"]
+    if controller_config.action_blocks[config.action]
+      config.instance_exec config, &controller_config.action_blocks[config.action]
     end
 
     @toc << "  - [#{config.description}](##{controller_config.controller}.#{config.action})"
@@ -244,10 +264,9 @@ PARAMS
   end
 
   def generate
-    @toc = []
-
+    @toc = Array(global_config.toc).dup
     controllers = Rails.application.routes.routes.reduce({}) { |memo, route|
-      if route.defaults.fetch(:controller, '').starts_with? configuration_strings[:namespace]
+      if global_config.namespaces.any? { |ns| route.defaults.fetch(:controller, '').starts_with? "#{ns}/" }
         memo[route.defaults[:controller]] ||= []
         memo[route.defaults[:controller]] << route
       end
@@ -267,12 +286,17 @@ PARAMS
       controller_blocks << ''
     end
 
+    title = global_config.title
+    title = "# " + t("global_header", app_name: global_config.app_name) if title.blank?
 
-    md = []
-    md << global_block || "# " + t("global_header", app_name: configuration_strings[:app_name])
+    md = [title]
     md << "\n"
     md += @toc
     md << "\n"
+    if global_config.global_block.present?
+      md << global_config.global_block
+      md << "\n"
+    end
     md += controller_blocks
     md.join("\n")
   end

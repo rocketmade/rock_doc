@@ -3,6 +3,7 @@
 en:
   api_doc:
     global_block: "API Documentation for %{app_name}"
+    serializers_toc: "Models"
     actions:
       default: "%{action} %{resources}"
       index: "List all %{resources}"

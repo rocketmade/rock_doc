@@ -9,13 +9,16 @@ Gem::Specification.new do |s|
   s.version     = RockDoc::VERSION
   s.authors     = ["Daniel Evans"]
   s.email       = ["evans.daniel.n@gmail.com"]
-  s.homepage    = "TODO"
-  s.summary     = "TODO: Summary of RockDoc."
-  s.description = "TODO: Description of RockDoc."
+  s.homepage    = "https://github.com/rocketmade/rock_doc"
+  s.summary     = "An automatic api doc generator."
+  s.description = <<DESC
+Automatically generates docs by inspecting controllers in api namespaces and has_scope scopes.
+For resourceful controllers it further interrogates the model and active model serializers, if available.
+DESC
   s.license     = "MIT"
 
   s.files = Dir["{app,config,db,lib}/**/*", "MIT-LICENSE", "Rakefile", "README.rdoc"]
-  s.test_files = Dir["test/**/*"]
+  s.test_files = Dir["spec/**/*"]
 
   s.add_dependency "rails", "~> 4.2.0.beta4"
 

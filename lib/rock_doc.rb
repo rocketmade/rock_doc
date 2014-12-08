@@ -1,5 +1,6 @@
 class RockDoc
-  GlobalConfigurator = Struct.new(:title, :toc, :global_block, :namespaces, :app_name)
+  autoload :Rendering, "rock_doc/rendering"
+  GlobalConfigurator = Struct.new(:title, :toc, :global_block, :namespaces, :app_name, :renderer)
 
   SerializerConfigurator = Struct.new(:resource_name, :resource_class, :json_representation,
                                       :notes, :attributes_for_json, :serializer, :nodoc)
@@ -8,8 +9,8 @@ class RockDoc
                                       :resource_class, :controller_class,
                                       :serializer_class, :routes,
                                       :json_representation, :permitted_params,
-                                      :notes, :final_markdown, :attributes_for_json,
-                                      :attributes_for_permitted_params, :action_blocks,
+                                      :notes, :attributes_for_json,
+                                      :attributes_for_permitted_params, :action_configs,
                                       :nodoc
                                      ) do
     def action name, &block
@@ -21,10 +22,10 @@ class RockDoc
     end
   end
 
-  RouteConfigurator = Struct.new(:action, :description, :verb, :pathspec,
-                                 :controller_config, :notes, :final_markdown,
-                                 :scopes, :nodoc
-                                )
+  ActionConfigurator = Struct.new(:action, :description, :verb, :pathspec,
+                                  :controller_config, :notes,
+                                  :scopes, :nodoc
+                                 )
 
   ControllerConfigBlock = Struct.new(:namespace, :block)
 
@@ -33,15 +34,17 @@ class RockDoc
       gc.namespaces = [:api]
       gc.toc = []
       gc.app_name = Rails.application.class.parent.name
+      gc.renderer = Rendering::Markdown.new
+      gc.title = t("global_header", app_name: gc.app_name)
     end
   end
 
-  def self.controllers
-    @controllers ||= {}.with_indifferent_access
+  def self.app_controller_blocks
+    @app_controller_blocks ||= {}.with_indifferent_access
   end
 
-  def self.serializers
-    @serializers ||= {}.with_indifferent_access
+  def self.app_serializer_blocks
+    @app_serializer_blocks ||= {}.with_indifferent_access
   end
 
   def self.current_namespaces
@@ -60,17 +63,16 @@ class RockDoc
 
   def self.controller name, &block
     path = (current_namespaces + [name]).join('/')
-    self.controllers[path] = ControllerConfigBlock.new(path, block)
+    self.app_controller_blocks[path] = ControllerConfigBlock.new(path, block)
   end
 
   def self.serializer name, &block
-    self.serializers[name] = block
+    self.app_serializer_blocks[name] = block
   end
 
   def self.global &block
     block.call self.global_config
   end
-
 
   def self.t key, options={}
     I18n.t key, options.merge(scope: "api_doc")
@@ -80,11 +82,9 @@ class RockDoc
     I18n.t! key, options.merge(scope: "api_doc")
   end
 
-  delegate :global_config, :controllers, :serializers, :t, :t!, to: :class
-
-  def supported_json_types
-    %w(String Integer Decimal Datetime Text Boolean)
-  end
+  delegate :global_config, :app_controller_blocks, :app_serializer_blocks, :t, :t!, to: :class
+  delegate :renderer, to: :global_config
+  delegate :present_json, to: :renderer
 
   def try_translations keys, options
     keys.map do |key|
@@ -94,18 +94,6 @@ class RockDoc
         nil
       end
     end.compact.first
-  end
-
-  def present_json hash
-    json = JSON.pretty_generate(hash)
-
-    json.gsub!(/"(\[|\{)/, '\1')
-    json.gsub!(/(\]|\})"/, '\1')
-
-    json.gsub!(/:\ "(#{supported_json_types.join('|').downcase})"/i).each do |match|
-      ": #{match.gsub(':', '').gsub('"', '').strip.capitalize}"
-    end
-    json
   end
 
   def action_description config: required, action: required
@@ -156,38 +144,24 @@ class RockDoc
     attributes.merge associations
   end
 
-  def serializer_block serializer_class: required, config: required, resource_class: required
+  def configure_serializer serializer_class: required, config: required, resource_class: required
     config.serializer = serializer_class
     config.resource_class = resource_class
     config.resource_name = resource_class.name.underscore.humanize
 
-
     config.attributes_for_json = serializer_to_attributes config.serializer, config.resource_class
 
     ## Hook for app code
-    if serializers[config.serializer.name.underscore.gsub(/_serializer$/, '')]
-      config.instance_exec config, &serializers[config.serializer.name.underscore.gsub(/_serializer$/, '')]
+    if app_serializer_blocks[config.serializer.name.underscore.gsub(/_serializer$/, '')]
+      config.instance_exec config, &app_serializer_blocks[config.serializer.name.underscore.gsub(/_serializer$/, '')]
     end
 
     config.json_representation ||= present_json config.attributes_for_json
 
-    unless config.nodoc
-      md = []
-      @toc << "  - [#{config.resource_name}](##{config.serializer.name})"
-      md << <<JSON
-<a name="#{config.serializer.name}">
-### #{config.resource_name}
-#### JSON
-````
-#{config.json_representation}
-````
-JSON
-
-      md
-    end
+    config
   end
 
-  def controller_block controller: required, routes: required, config: required, serializer_configs: required
+  def configure_controller controller: required, routes: required, config: required, serializer_configs: required
     config.controller    = controller
     config.routes        = routes
     config.resource_name = controller.gsub(/^(#{global_config.namespaces.join('|')})\//, '').camelcase.singularize
@@ -210,10 +184,9 @@ JSON
       config.attributes_for_permitted_params = params_hash
     end
 
-
     ## Hook for app code
-    if controllers[controller]
-      config.instance_exec config, &controllers[controller].block
+    if app_controller_blocks[controller]
+      config.instance_exec config, &app_controller_blocks[controller].block
     end
 
     if config.json_representation.blank?
@@ -231,40 +204,15 @@ JSON
       config.permitted_params = present_json config.attributes_for_permitted_params
     end
 
+    config.action_configs = routes.map do |route|
+      action_config = ActionConfigurator.new
+      configure_action(controller_config: config, config: action_config, route: route)
+    end.reject &:nodoc
 
-    unless config.nodoc
-      @toc << "- [#{config.resource_name}](##{config.controller})"
-      unless config.final_markdown.present?
-        md = []
-        md << "<a name=\"#{config.controller}\" />"
-        md << "## #{config.resource_name}"
-        if config.json_representation.present?
-          md << <<JSON
-#### JSON
-````
-#{config.json_representation}
-````
-JSON
-        end
-
-        if config.permitted_params.present?
-          md << <<PARAMS
-
-#### Permitted Parameters (for POST/PUT/PATCH requests)
-````
-#{config.permitted_params}
-````
-
-PARAMS
-        end
-        config.final_markdown = md.join("\n")
-      end
-
-      config.final_markdown
-    end
+    config
   end
 
-  def route_block controller_config: required, route: required, config: required
+  def configure_action controller_config: required, route: required, config: required
     config.action = route.defaults.fetch(:action, '')
     config.description = action_description config: controller_config, action: config.action
     config.verb = route.verb.source.gsub(/[$^]/, '')
@@ -292,37 +240,10 @@ PARAMS
       config.instance_exec config, &controller_config.action_blocks[config.action]
     end
 
-    unless config.nodoc
-      @toc << "  - [#{config.description}](##{controller_config.controller}.#{config.action})"
-      md = []
-      md << "<a name=\"#{controller_config.controller}.#{config.action}\" />"
-      md << "### #{config.description}"
-      md << "**#{config.verb} #{config.pathspec}**"
-
-      if config.scopes.present?
-        md << "\n\n##### GET parameters supported:"
-        config.scopes.each do |k, v|
-          scope = "* `#{k}`"
-          scope += ": #{v}" if v.present?
-        md << scope
-        end
-        md << "\n"
-      end
-
-      if config.notes.present?
-        md << ''
-        md << "##### Notes"
-        md << config.notes
-        md << "\n"
-      end
-
-      config.final_markdown = md.join("\n") unless config.final_markdown.present?
-      config.final_markdown
-    end
+    config
   end
 
   def generate
-    @toc = Array(global_config.toc).dup
     controllers = Rails.application.routes.routes.reduce({}) { |memo, route|
       if global_config.namespaces.any? { |ns| route.defaults.fetch(:controller, '').starts_with? "#{ns}/" }
         memo[route.defaults[:controller]] ||= []
@@ -331,45 +252,24 @@ PARAMS
       memo
     }
 
-    @toc << "- [#{t("serializers_toc")}](#serializers)"
-    serializer_blocks  = ["<a name=\"serializers\">", "## #{t("serializers_toc")}"]
-    serializer_configs = {}.with_indifferent_access
-    serializer_classes.each do |serializer_class, resource_class|
-      serializer_config = SerializerConfigurator.new
-      serializer_configs[serializer_class] = serializer_config
-      serializer_blocks << serializer_block(serializer_class: serializer_class, resource_class: resource_class, config: serializer_config)
-    end
+    serializer_configs_hash = {}.with_indifferent_access
+    serializer_configs = serializer_classes.map do |serializer_class, resource_class|
+      config = SerializerConfigurator.new
+      serializer_configs_hash[serializer_class] = config
+      configure_serializer(serializer_class: serializer_class, resource_class: resource_class, config: config)
 
-    controller_blocks = []
-    controllers.each do |controller, routes|
-      controller_config = ControllerConfigurator.new
+      config
+    end.reject &:nodoc
 
-      controller_blocks << controller_block(controller: controller, routes: routes, config: controller_config, serializer_configs: serializer_configs)
+    controller_configs = controllers.map do |controller, routes|
+      config = ControllerConfigurator.new
 
-      unless controller_config.nodoc
-        routes.each do |route|
-          route_config = RouteConfigurator.new
-          controller_blocks << route_block(controller_config: controller_config, config: route_config, route: route)
-        end
-        controller_blocks << ''
-      end
-    end
+      configure_controller(controller: controller, routes: routes, config: config, serializer_configs: serializer_configs_hash)
 
-    title = global_config.title
-    title = "# " + t("global_header", app_name: global_config.app_name) if title.blank?
+      config
+    end.reject &:nodoc
 
-    md = [title]
-    md << "\n"
-    md += @toc
-    md << "\n"
-    if global_config.global_block.present?
-      md << global_config.global_block
-      md << "\n"
-    end
-    md += serializer_blocks
-    md << "\n"
-    md += controller_blocks
-    md.join("\n")
+    renderer.render global: global_config, controllers: controller_configs, serializers: serializer_configs
   end
 
   class Railtie < Rails::Railtie

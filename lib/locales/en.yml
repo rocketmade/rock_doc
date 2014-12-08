@@ -3,7 +3,10 @@
 en:
   api_doc:
     global_block: "API Documentation for %{app_name}"
+    controllers_toc: "Endpoints"
     serializers_toc: "Models"
+    controllers:
+      permitted_parameters: "Permitted Parameters (for POST/PUT/PATCH requests)"
     actions:
       default: "%{action} %{resources}"
       index: "List all %{resources}"
@@ -13,11 +16,17 @@ en:
       destroy: "Destroy a %{resource}"
       me: "Get the current %{resource}"
       update_me: "Update the current %{resource}"
+      get_params: "GET parameters supported"
+      notes: "Notes"
     scopes:
       default: ""
       page: "Specifies the page of results to get. Defaults to %{scope_default}"
       start_id: "Specifies the largest id for paginated results. No Default."
 
     json:
+      title: "JSON"
       resource_array: "[...{...%{resource}...},{...%{resource}...}...]"
       resource_object: "{...%{resource}...}"
+      markdown:
+        start: "```ruby"
+        end:   "```"

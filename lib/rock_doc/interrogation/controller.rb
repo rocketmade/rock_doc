@@ -17,13 +17,30 @@ class RockDoc
 
 
         if configuration.controller_class.respond_to?(:permitted_params) && configuration.controller_class.permitted_params
-          params_hash = configuration.controller_class.permitted_params
-          params_hash[params_hash.keys.first] = params_hash[params_hash.keys.first].map do |attribute|
-            type = configuration.resource_class.columns_hash[attribute].type.to_s.capitalize rescue "String"
-            [attribute, type]
-          end.to_h
-          configuration.attributes_for_permitted_params ||= params_hash
+          params_hash = {}
+          configuration.attributes_for_permitted_params ||= attribute_set params_hash, configuration, configuration.controller_class.permitted_params
         end
+      end
+
+      protected
+      def self.attribute_set memo, configuration, working_set
+        if working_set.is_a? Hash
+          working_set.keys.each do |key|
+            memo[key] = {}
+            attribute_set memo[key], configuration, working_set[key]
+          end
+        elsif working_set.is_a? Array
+          working_set.map do |k|
+            if k.is_a? Hash
+              memo = attribute_set memo, configuration, k
+            else
+              type = configuration.resource_class.columns_hash[k].type.to_s.capitalize rescue "String"
+              memo[k] = type
+            end
+          end
+        end
+
+        memo
       end
     end
   end

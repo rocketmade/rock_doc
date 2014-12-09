@@ -103,10 +103,10 @@ JSON
     end
 
     def render_controller config, toc_depth: 2, title_depth: 3
-      toc << toc_line(config.resource_name, config.controller, toc_depth)
+      toc << toc_line(config.resource_name, config.path, toc_depth)
 
       md = []
-      md << anchor_line(config.controller)
+      md << anchor_line(config.path)
       md << title_line(config.resource_name, title_depth)
       if config.json_representation.present?
         md << <<JSON
@@ -137,10 +137,10 @@ PARAMS
 
     def render_action controller_config, config, toc_depth: 3, title_depth: 4
 
-      toc << toc_line(config.description, "#{controller_config.controller}.#{config.action}", toc_depth)
+      toc << toc_line(config.description, "#{controller_config.path}.#{config.action}", toc_depth)
 
       md = []
-      md << anchor_line("#{controller_config.controller}.#{config.action}")
+      md << anchor_line("#{controller_config.path}.#{config.action}")
       md << title_line(config.description, title_depth)
       md << "**#{config.verb} #{config.pathspec}**"
 

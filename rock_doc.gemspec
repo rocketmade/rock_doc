@@ -24,4 +24,5 @@ DESC
 
   s.add_development_dependency "sqlite3"
   s.add_development_dependency "active_model_serializers", '~> 0.8.0'
+  s.add_development_dependency "rspec-rails"
 end

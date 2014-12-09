@@ -164,6 +164,7 @@ class RockDoc
     configuration
   end
 
+  # Generates documentation by running interrogation, configuration blocks and the renderer
   def generate
     serializers = global_configuration.interrogators[:resources].map do |interrogator|
       interrogator.interrogate_resources doc: self

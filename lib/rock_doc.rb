@@ -1,19 +1,21 @@
 class RockDoc
-  autoload :Rendering, "rock_doc/rendering"
+  autoload :Rendering,     "rock_doc/rendering"
   autoload :Interrogation, "rock_doc/interrogation"
   autoload :Configuration, "rock_doc/configuration"
 
-  delegate :global_config, :app_controller_blocks, :app_serializer_blocks, :t, :t!, to: :class
-  delegate :renderer, to: :global_config
+  delegate :global_configuration, :app_controller_blocks, :app_serializer_blocks, :t, :t!, to: :class
+  delegate :renderer, to: :global_configuration
   delegate :present_json, to: :renderer
 
-  def self.global_config
-    @global_config ||= Configuration::Global.new.tap do |gc|
+  # Global Configurations
+  def self.global_configuration
+    @global_configuration ||= Configuration::Global.new.tap do |gc|
       gc.namespaces = [:api]
-      gc.toc = []
-      gc.app_name = Rails.application.class.parent.name
-      gc.renderer = Rendering::Markdown.new
-      gc.title = t("global_header", app_name: gc.app_name)
+      gc.toc        = []
+      gc.app_name   = Rails.application.class.parent.name
+      gc.renderer   = Rendering::Markdown.new
+      gc.title      = t("global_header", app_name: gc.app_name)
+
       gc.interrogators = {
         # Generates the list of controllers/actions we are going to interrogate
         routes:        [Interrogation::Routes],
@@ -65,7 +67,7 @@ class RockDoc
   end
 
   def self.global &block
-    block.call self.global_config
+    block.call self.global_configuration
   end
 
   def self.t key, options={}
@@ -86,14 +88,14 @@ class RockDoc
     end.compact.first
   end
 
-  def action_description config: required, action: required
-    keys = ["controllers.#{config.path}.actions.#{action}", "actions.#{action}", "controllers.#{config.path}.actions.default", "actions.default"]
-    try_translations keys, resource: config.resource_name, resources: config.resource_name.pluralize, controller: config.path, action: action.capitalize
+  def action_description configuration: required, action: required
+    keys = ["controllers.#{configuration.path}.actions.#{action}", "actions.#{action}", "controllers.#{configuration.path}.actions.default", "actions.default"]
+    try_translations keys, resource: configuration.resource_name, resources: configuration.resource_name.pluralize, controller: configuration.path, action: action.capitalize
   end
 
-  def scope_description config: required, scope: scope, default: nil, type: nil
-    keys = ["controllers.#{config.path}.scopes.#{scope}", "scopes.#{scope}", "controllers.#{config.path}.scopes.default", "scopes.default"]
-    try_translations keys, resource: config.resource_name, resources: config.resource_name.pluralize, controller: config.path, scope_name: scope, scope_default: default, type: type
+  def scope_description configuration: required, scope: scope, default: nil, type: nil
+    keys = ["controllers.#{configuration.path}.scopes.#{scope}", "scopes.#{scope}", "controllers.#{configuration.path}.scopes.default", "scopes.default"]
+    try_translations keys, resource: configuration.resource_name, resources: configuration.resource_name.pluralize, controller: configuration.path, scope_name: scope, scope_default: default, type: type
   end
 
   def required
@@ -101,89 +103,89 @@ class RockDoc
     raise ArgumentError, "A required keyword argument was not specified when calling '#{method}'"
   end
 
-  def configure_serializer resource_config: required, config: required
-    global_config.interrogators[:serialization].each do |interrogator|
-      interrogator.interrogate_serialization self, resource_config, config
+  def configure_serializer resource_configuration: required, configuration: required
+    global_configuration.interrogators[:serialization].each do |interrogator|
+      interrogator.interrogate_serialization doc: self, resource_configuration: resource_configuration, configuration: configuration
     end
 
     ## Hook for app code
-    if app_serializer_blocks[config.configuration_name]
-      config.instance_exec config, &app_serializer_blocks[config.configuration_name]
+    if app_serializer_blocks[configuration.configuration_name]
+      configuration.instance_exec configuration, &app_serializer_blocks[configuration.configuration_name]
     end
 
-    config.json_representation ||= present_json config.attributes_for_json
+    configuration.json_representation ||= present_json configuration.attributes_for_json
 
-    config
+    configuration
   end
 
-  def configure_controller path: required, routes: required, config: required, serializer_configs: required
-    global_config.interrogators[:controller].each do |interrogator|
-      interrogator.interrogate_controller self, path, routes, serializer_configs, config
+  def configure_controller path: required, routes: required, configuration: required, serializer_configurations: required
+    global_configuration.interrogators[:controller].each do |interrogator|
+      interrogator.interrogate_controller doc: self, path: path, route_configurations: routes, serializer_configurations: serializer_configurations, configuration: configuration
     end
 
     ## Hook for app code
     if app_controller_blocks[path]
-      config.instance_exec config, &app_controller_blocks[path].block
+      configuration.instance_exec configuration, &app_controller_blocks[path].block
     end
 
-    if config.json_representation.blank?
-      if config.attributes_for_json.present?
-        config.json_representation = present_json config.attributes_for_json
-      elsif serializer_config
+    if configuration.json_representation.blank?
+      if configuration.attributes_for_json.present?
+        configuration.json_representation = present_json configuration.attributes_for_json
+      elsif serializer_configuration
         begin
-          config.json_representation = present_json serializer_config.attributes_for_json
+          configuration.json_representation = present_json serializer_configuration.attributes_for_json
         rescue NoMethodError
         end
       end
     end
 
-    if config.permitted_params.blank? && config.attributes_for_permitted_params.present?
-      config.permitted_params = present_json config.attributes_for_permitted_params
+    if configuration.permitted_params.blank? && configuration.attributes_for_permitted_params.present?
+      configuration.permitted_params = present_json configuration.attributes_for_permitted_params
     end
 
-    config.action_configs = routes.map do |route|
-      Configuration::Action.new.tap do |action_config|
-        configure_action(controller_config: config, config: action_config, route: route)
+    configuration.action_configurations = routes.map do |route|
+      Configuration::Action.new.tap do |action_configuration|
+        configure_action(controller_configuration: configuration, configuration: action_configuration, route: route)
       end
     end.reject &:nodoc
 
-    config
+    configuration
   end
 
-  def configure_action controller_config: required, route: required, config: required
-    global_config.interrogators[:action].each do |interrogator|
-      interrogator.interrogate_action self, controller_config, route, config
+  def configure_action controller_configuration: required, route: required, configuration: required
+    global_configuration.interrogators[:action].each do |interrogator|
+      interrogator.interrogate_action doc: self, controller_configuration: controller_configuration, route: route, configuration: configuration
     end
 
-    if controller_config.action_blocks[config.action]
-      config.instance_exec config, &controller_config.action_blocks[config.action]
+    if controller_configuration.action_blocks[configuration.action]
+      configuration.instance_exec configuration, &controller_configuration.action_blocks[configuration.action]
     end
 
-    config
+    configuration
   end
 
   def generate
-    serializers = global_config.interrogators[:resources].map do |interrogator|
-      interrogator.interrogate_resources self
+    serializers = global_configuration.interrogators[:resources].map do |interrogator|
+      interrogator.interrogate_resources doc: self
     end.flatten.uniq.map do |resource|
-      Configuration::Serializer.new.tap do |config|
-        configure_serializer resource_config: resource, config: config
+      Configuration::Serializer.new.tap do |configuration|
+        configure_serializer resource_configuration: resource, configuration: configuration
       end
     end.reject &:nodoc
 
-    routes = global_config.interrogators[:routes].map do |interrogator|
-      interrogator.interrogate_routes self
+    routes = global_configuration.interrogators[:routes].map do |interrogator|
+      interrogator.interrogate_routes doc: self
     end.flatten.uniq
 
-    controller_configs = routes.map(&:controller_path).uniq.map do |path|
-      Configuration::Controller.new.tap do |config|
-        config.path = path
+    controller_configurations = routes.map(&:controller_path).uniq.map do |path|
+      Configuration::Controller.new.tap do |configuration|
+        configuration.path = path
         route_set = routes.select { |r| r.controller_path == path }
-        configure_controller(path: path, routes: route_set, config: config, serializer_configs: serializers)
+        configure_controller(path: path, routes: route_set, configuration: configuration, serializer_configurations: serializers)
       end
     end.reject &:nodoc
 
-    renderer.render global: global_config, controllers: controller_configs, serializers: serializers
+    renderer.render doc: self, controller_configurations: controller_configurations, serializer_configurations: serializers
   end
 
   class Railtie < Rails::Railtie

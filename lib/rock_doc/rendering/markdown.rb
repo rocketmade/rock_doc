@@ -1,28 +1,29 @@
 module RockDoc::Rendering
   class Markdown
-    delegate :t, :t!, to: RockDoc
+    delegate :t, :t!, to: :rock_doc
+    delegate :global_configuration, to: :rock_doc
 
-    attr_accessor :global_config, :controllers, :serializers
+    attr_accessor :controller_configurations, :serializer_configurations, :rock_doc
 
-    def render global: required, controllers: required, serializers: required
-      @global_config = global
-      @controllers = controllers
-      @serializers = serializers
+    def render doc: required, controller_configurations: required, serializer_configurations: required
+      self.rock_doc                  = doc
+      self.controller_configurations = controller_configurations
+      self.serializer_configurations = serializer_configurations
 
-      toc << global_config.toc.map { |t|
+      toc << global_configuration.toc.map { |t|
         title, anchor, depth, _ = Array(t)
         toc_line title, anchor, (depth || 1)
       }
 
 
-      md = [title_line(global_config.title, 1)]
+      md = [title_line(global_configuration.title, 1)]
       blocks = [render_serializers, render_controllers] # run now so toc populates
 
       md << "\n"
       md += toc
       md << "\n"
-      if global_config.global_block.present?
-        md << global_config.global_block
+      if global_configuration.global_block.present?
+        md << global_configuration.global_block
         md << "\n"
       end
       md += blocks
@@ -72,20 +73,20 @@ module RockDoc::Rendering
       toc << toc_line(t("serializers_toc"), "serializers", toc_depth)
       results = [anchor_line("serializers"), title_line(t("serializers_toc"), title_depth)]
 
-      @serializers.each do |serializer|
+      @serializer_configurations.each do |serializer|
         results << render_serializer(serializer, toc_depth: toc_depth + 1, title_depth: title_depth + 1)
       end
       results.join("\n\n")
     end
 
-    def render_serializer config, toc_depth: 2, title_depth: 3
-      toc << toc_line(config.resource_name, config.serializer.name, toc_depth)
+    def render_serializer configuration, toc_depth: 2, title_depth: 3
+      toc << toc_line(configuration.resource_name, configuration.serializer.name, toc_depth)
       <<JSON
-#{anchor_line(config.serializer.name)}
-#{title_line config.resource_name, title_depth}
+#{anchor_line(configuration.serializer.name)}
+#{title_line configuration.resource_name, title_depth}
 #{title_line t("json.title"), title_depth + 1}
 #{t "json.markdown.start"}
-#{config.json_representation}
+#{configuration.json_representation}
 #{t "json.markdown.end"}
 JSON
     end
@@ -96,58 +97,58 @@ JSON
 
       toc << toc_line(t("controllers_toc"), "controllers", toc_depth)
       results = [anchor_line("controllers"), title_line(t("controllers_toc"), title_depth)]
-      @controllers.each do |controller|
+      @controller_configurations.each do |controller|
         results << render_controller(controller, toc_depth: toc_depth + 1, title_depth: title_depth + 1)
       end
       results.join("\n\n")
     end
 
-    def render_controller config, toc_depth: 2, title_depth: 3
-      toc << toc_line(config.resource_name, config.path, toc_depth)
+    def render_controller configuration, toc_depth: 2, title_depth: 3
+      toc << toc_line(configuration.resource_name, configuration.path, toc_depth)
 
       md = []
-      md << anchor_line(config.path)
-      md << title_line(config.resource_name, title_depth)
-      if config.json_representation.present?
+      md << anchor_line(configuration.path)
+      md << title_line(configuration.resource_name, title_depth)
+      if configuration.json_representation.present?
         md << <<JSON
 #{title_line t("json.title"), title_depth + 1}
 #{t "json.markdown.start"}
-#{config.json_representation}
+#{configuration.json_representation}
 #{t "json.markdown.end"}
 JSON
       end
 
-      if config.permitted_params.present?
+      if configuration.permitted_params.present?
         md << <<PARAMS
 #{title_line t("controllers.permitted_parameters"), title_depth + 1}
 #{t "json.markdown.start"}
-#{config.permitted_params}
+#{configuration.permitted_params}
 #{t "json.markdown.end"}
 
 PARAMS
       end
 
-      config.action_configs.each do |action|
-        md << render_action(config, action, toc_depth: toc_depth + 1, title_depth: title_depth + 1)
+      configuration.action_configurations.each do |action|
+        md << render_action(configuration, action, toc_depth: toc_depth + 1, title_depth: title_depth + 1)
       end
 
 
       md.join("\n")
     end
 
-    def render_action controller_config, config, toc_depth: 3, title_depth: 4
+    def render_action controller_configuration, configuration, toc_depth: 3, title_depth: 4
 
-      toc << toc_line(config.description, "#{controller_config.path}.#{config.action}", toc_depth)
+      toc << toc_line(configuration.description, "#{controller_configuration.path}.#{configuration.action}", toc_depth)
 
       md = []
-      md << anchor_line("#{controller_config.path}.#{config.action}")
-      md << title_line(config.description, title_depth)
-      md << "**#{config.verb} #{config.pathspec}**"
+      md << anchor_line("#{controller_configuration.path}.#{configuration.action}")
+      md << title_line(configuration.description, title_depth)
+      md << "**#{configuration.verb} #{configuration.pathspec}**"
 
-      if config.scopes.present?
+      if configuration.scopes.present?
         md << "\n"
         md << title_line(t("actions.get_params"), title_depth + 1)
-        config.scopes.each do |k, v|
+        configuration.scopes.each do |k, v|
           scope = "* `#{k}`"
           scope += ": #{v}" if v.present?
         md << scope
@@ -155,10 +156,10 @@ PARAMS
         md << "\n"
       end
 
-      if config.notes.present?
+      if configuration.notes.present?
         md << ''
         md << title_line(t("actions.notes"), title_depth + 1)
-        md << config.notes
+        md << configuration.notes
         md << "\n"
       end
 

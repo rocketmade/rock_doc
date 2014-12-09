@@ -1,30 +1,29 @@
 class RockDoc
   module Interrogation
     class Controller
-      def self.interrogate_controller rock_doc, path, route_configs, serializer_configs, config
-        config.path          = path
-        config.routes        = route_configs
-        config.resource_name = config.path.gsub(/^(#{rock_doc.global_config.namespaces.join('|')})\//, '').camelcase.singularize
+      def self.interrogate_controller doc: nil, path: nil, route_configurations: nil, serializer_configurations: nil, configuration: nil
+        configuration.path           = path
+        configuration.routes         = route_configurations
+        configuration.resource_name  = configuration.path.gsub(/^(#{doc.global_configuration.namespaces.join('|')})\//, '').camelcase.singularize
+        configuration.resource_class = configuration.resource_name.safe_constantize
 
-
-        config.controller_class = begin
-                                    Rails.application.routes.dispatcher("").send(:controller_reference, config.path)
+        configuration.controller_class = begin
+                                    Rails.application.routes.dispatcher("").send(:controller_reference, configuration.path)
                                   rescue NameError
                                     nil
                                   end
 
-        config.resource_class   = config.resource_name.safe_constantize
 
 
-        if config.controller_class.respond_to?(:permitted_params) && config.controller_class.permitted_params
-          params_hash = config.controller_class.permitted_params
+
+        if configuration.controller_class.respond_to?(:permitted_params) && configuration.controller_class.permitted_params
+          params_hash = configuration.controller_class.permitted_params
           params_hash[params_hash.keys.first] = params_hash[params_hash.keys.first].map do |attribute|
-            type = config.resource_class.columns_hash[attribute].type.to_s.capitalize rescue "String"
+            type = configuration.resource_class.columns_hash[attribute].type.to_s.capitalize rescue "String"
             [attribute, type]
           end.to_h
-          config.attributes_for_permitted_params ||= params_hash
+          configuration.attributes_for_permitted_params ||= params_hash
         end
-
       end
     end
   end

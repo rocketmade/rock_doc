@@ -9,7 +9,7 @@ class RockDoc
 
         configuration.controller_configuration = controller_configuration
 
-        if configuration.action.to_s == "index"
+        if configuration.action.to_s == "index" && controller_configuration.controller_class.respond_to?(:scopes_configuration)
           scopes = controller_configuration.controller_class.scopes_configuration
           configuration.scopes = scopes.reduce({}) do |memo, kvp|
             key = kvp.first

@@ -2,6 +2,7 @@
 ENV["RAILS_ENV"] = "test"
 
 require 'spec_helper'
+require 'active_model_serializers'
 require File.expand_path("../../spec/dummy/config/environment.rb",  __FILE__)
 ActiveRecord::Migrator.migrations_paths = [File.expand_path("../../test/dummy/db/migrate", __FILE__)]
 require 'rspec/rails'

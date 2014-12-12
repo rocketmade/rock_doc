@@ -3,6 +3,7 @@ vendor/bundle
 log/*.log
 pkg/
 spec/dummy/doc/api.markdown
+spec/dummy/db/schema.rb
 spec/dummy/db/*.sqlite3
 spec/dummy/db/*.sqlite3-journal
 spec/dummy/log/*.log

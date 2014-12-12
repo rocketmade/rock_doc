@@ -131,9 +131,9 @@ class RockDoc
     if configuration.json_representation.blank?
       if configuration.attributes_for_json.present?
         configuration.json_representation = present_json configuration.attributes_for_json
-      elsif serializer_configuration
+      elsif configuration.serializer_configuration
         begin
-          configuration.json_representation = present_json serializer_configuration.attributes_for_json
+          configuration.json_representation = present_json configuration.serializer_configuration.attributes_for_json
         rescue NoMethodError
         end
       end

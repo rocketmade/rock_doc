@@ -88,6 +88,7 @@ module RockDoc::Rendering
 #{t "json.markdown.start"}
 #{configuration.json_representation}
 #{t "json.markdown.end"}
+#{configuration.notes}
 JSON
     end
 

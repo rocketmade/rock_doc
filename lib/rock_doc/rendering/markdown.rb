@@ -129,6 +129,8 @@ JSON
 PARAMS
       end
 
+      md << configuration.notes
+
       configuration.action_configurations.each do |action|
         md << render_action(configuration, action, toc_depth: toc_depth + 1, title_depth: title_depth + 1)
       end

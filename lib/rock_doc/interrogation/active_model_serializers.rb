@@ -2,7 +2,7 @@ class RockDoc
   module Interrogation
     class ActiveModelSerializers
       def self.interrogate_resources doc: nil
-        Dir[Rails.root.join("app/serializers/**/*_serializer.rb")].each do |f|
+        Dir[Rails.root.join("app/serializers/**/*_serializer.rb")].sort.each do |f|
           require f
         end
         if defined?(ActiveModel::Serializer)

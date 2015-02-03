@@ -4,13 +4,17 @@ class RockDoc
       def self.interrogate_serialization doc: nil, resource_configuration: nil, configuration: nil
         configuration.serializer          = resource_configuration.serializer
         configuration.resource_class      = resource_configuration.resource_class
-        configuration.resource_name       = resource_configuration.resource_class.name.underscore.humanize
+        begin
+          configuration.resource_name     = resource_configuration.resource_class.name.underscore.humanize
+        rescue NoMethodError
+          configuration.resource_name     = resource_configuration.configuration_name.to_s.humanize
+        end
         configuration.configuration_name  = resource_configuration.configuration_name
         configuration.attributes_for_json = serializer_to_attributes doc, configuration.serializer, configuration.resource_class
       end
 
       def self.serializer_to_attributes doc, serializer, resource_class
-        attributes   = serializer.schema[:attributes].dup
+        attributes   = serializer.schema.fetch(:attributes, {}).dup
         associations = serializer.schema.fetch(:associations, {}).reduce({}) { |memo, kvp|
           key = nil
 

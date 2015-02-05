@@ -8,10 +8,12 @@ class RockDoc
         configuration.resource_class = configuration.resource_name.safe_constantize
 
         configuration.controller_class = begin
-                                    Rails.application.routes.dispatcher("").send(:controller_reference, configuration.path)
-                                  rescue NameError
-                                    nil
-                                  end
+                                           Rails.application.routes.dispatcher("").send(:controller_reference, configuration.path)
+                                         rescue NameError
+                                           nil
+                                         end
+
+        configuration.nodoc = doc.global_configuration.excluded_klasses.include? configuration.controller_class.to_s
 
 
 

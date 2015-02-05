@@ -1,6 +1,6 @@
 class RockDoc
   module Configuration
-    class Global < Struct.new *%i(title toc global_block namespaces app_name renderer interrogators)
+    class Global < Struct.new *%i(title toc global_block namespaces app_name renderer interrogators excluded_klasses)
     end
 
     class Serializer < Struct.new *%i(resource_name resource_class json_representation

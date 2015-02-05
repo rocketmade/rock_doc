@@ -32,6 +32,8 @@ class RockDoc
         # Generates the configuration for an action
         action:        [Interrogation::Action]
       }
+
+      gc.excluded_klasses = []
     end
   end
 

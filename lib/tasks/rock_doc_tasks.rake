@@ -3,7 +3,7 @@
 #   # Task goes here
 # end
 
-desc "Generate automatic API documentation"
+desc 'Generate automatic API documentation'
 task rock_doc: :environment do
   require 'rock_doc'
 
@@ -11,8 +11,8 @@ task rock_doc: :environment do
     require f
   end
 
-  mkdir_p "doc"
-  File.open(Rails.root.join("doc/api.markdown"), "wb") do |f|
+  mkdir_p 'doc'
+  File.open(Rails.root.join('doc/api.apib'), 'wb') do |f|
     f.write RockDoc.new.generate
   end
 end

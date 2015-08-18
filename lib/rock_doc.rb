@@ -13,7 +13,7 @@ class RockDoc
       gc.namespaces = [:api]
       gc.toc        = []
       gc.app_name   = Rails.application.class.parent.name
-      gc.renderer   = Rendering::Markdown.new
+      gc.renderer   = Rendering::ApiBlueprint.new
       gc.title      = t("global_header", app_name: gc.app_name)
 
       gc.interrogators = {
